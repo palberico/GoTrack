@@ -3,6 +3,7 @@ import { AuthProvider } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import Sidebar from './components/Sidebar'
 import MobileNav from './components/MobileNav'
+import MobileHeader from './components/MobileHeader'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Customers from './pages/Customers'
@@ -13,7 +14,9 @@ function AppLayout() {
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="flex-1 min-w-0 pb-20 md:pb-0">
+      <MobileHeader />
+      {/* pt-14 clears the fixed mobile header; pb-20 clears the fixed mobile bottom nav */}
+      <main className="flex-1 min-w-0 pt-14 pb-20 md:pt-0 md:pb-0">
         <Routes>
           <Route path="/"              element={<Dashboard />} />
           <Route path="/customers"     element={<Customers />} />

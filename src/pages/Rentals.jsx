@@ -414,11 +414,11 @@ function RentalRow({ rental, onMarkReturned, marking }) {
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-3 shrink-0 mt-0.5">
+        <div className="flex flex-col items-end gap-2 shrink-0 mt-0.5">
           {dueBadge}
           {rental.status === 'active' && (
             <button
-              className="btn-secondary text-xs py-1.5 px-3"
+              className="btn-secondary text-xs py-1.5 px-3 whitespace-nowrap"
               onClick={() => onMarkReturned(rental.id)}
               disabled={marking === rental.id}
             >

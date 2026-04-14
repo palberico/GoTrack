@@ -123,18 +123,18 @@ export default function CustomerDetail() {
         </div>
 
         {/* Mini stats */}
-        <div className="grid grid-cols-3 gap-3 mt-5 pt-5 border-t border-gray-100">
-          <div className="text-center">
-            <p className="text-2xl font-bold text-gray-900">{totalRentals}</p>
-            <p className="text-xs text-gray-400">Total rentals</p>
+        <div className="grid grid-cols-3 gap-2 mt-5 pt-5 border-t border-gray-100">
+          <div className="text-center px-1">
+            <p className="text-xl sm:text-2xl font-bold text-gray-900">{totalRentals}</p>
+            <p className="text-xs text-gray-400 leading-tight">Total rentals</p>
           </div>
-          <div className="text-center">
-            <p className="text-2xl font-bold text-green-600">{activeRentals}</p>
-            <p className="text-xs text-gray-400">Active now</p>
+          <div className="text-center px-1">
+            <p className="text-xl sm:text-2xl font-bold text-green-600">{activeRentals}</p>
+            <p className="text-xs text-gray-400 leading-tight">Active now</p>
           </div>
-          <div className="text-center">
-            <p className="text-2xl font-bold text-gray-900">{totalTotes}</p>
-            <p className="text-xs text-gray-400">Totes rented</p>
+          <div className="text-center px-1">
+            <p className="text-xl sm:text-2xl font-bold text-gray-900">{totalTotes}</p>
+            <p className="text-xs text-gray-400 leading-tight">Totes rented</p>
           </div>
         </div>
       </div>
