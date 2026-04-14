@@ -40,14 +40,14 @@ export const rentalsCol   = collection(db, 'rentals')
 export const settingsDoc  = doc(db, 'settings', 'fleet')
 
 // ── Settings helpers ──────────────────────────────────────────
-export async function getFleetSize() {
+export async function getTotalTotes() {
   const snap = await getDoc(settingsDoc)
   if (snap.exists()) return snap.data().totalTotes ?? 20
   await setDoc(settingsDoc, { totalTotes: 20 })
   return 20
 }
 
-export async function updateFleetSize(n) {
+export async function updateTotalTotes(n) {
   await setDoc(settingsDoc, { totalTotes: n }, { merge: true })
 }
 

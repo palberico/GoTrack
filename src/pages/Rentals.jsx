@@ -65,7 +65,7 @@ function SectionHeader({ icon, label }) {
 }
 
 // ── Add rental modal ──────────────────────────────────────────
-function AddRentalModal({ onClose, customers, activeRentals, fleetSize }) {
+function AddRentalModal({ onClose, customers, activeRentals, totalTotes }) {
   const today = toDateStr(new Date())
   const [form, setForm] = useState({
     customerId:     '',
@@ -113,7 +113,7 @@ function AddRentalModal({ onClose, customers, activeRentals, fleetSize }) {
       if (used > maxUsed) maxUsed = used
     }
     const requested = parseInt(form.toteCount, 10) || 0
-    const available = fleetSize - maxUsed
+    const available = totalTotes - maxUsed
     return { available, requested }
   }
 
@@ -128,7 +128,7 @@ function AddRentalModal({ onClose, customers, activeRentals, fleetSize }) {
 
     const avail = availabilityForWindow()
     if (avail && avail.requested > avail.available) {
-      setError(`Not enough totes available. Only ${avail.available} free across this period (fleet: ${fleetSize}).`)
+      setError(`Not enough totes available. Only ${avail.available} free across this period (total: ${totalTotes}).`)
       return
     }
 
@@ -199,7 +199,7 @@ function AddRentalModal({ onClose, customers, activeRentals, fleetSize }) {
             <input
               type="number"
               min={1}
-              max={fleetSize}
+              max={totalTotes}
               className="input"
               placeholder="e.g. 5"
               value={form.toteCount}
@@ -436,14 +436,14 @@ export default function Rentals() {
   const [customers, setCustomers]   = useState([])
   const [activeRentals, setActive]  = useState([])
   const [allRentals, setAll]        = useState([])
-  const [fleet, setFleet]           = useState(20)
+  const [totalTotes, setTotalTotes] = useState(20)
   const [showModal, setShowModal]   = useState(false)
   const [marking, setMarking]       = useState(null)
   const [tab, setTab]               = useState('active')
 
   useEffect(() => {
     const unsub = onSnapshot(settingsDoc, snap => {
-      if (snap.exists()) setFleet(snap.data().totalTotes ?? 20)
+      if (snap.exists()) setTotalTotes(snap.data().totalTotes ?? 20)
     })
     return unsub
   }, [])
@@ -559,7 +559,7 @@ export default function Rentals() {
           onClose={() => setShowModal(false)}
           customers={customers}
           activeRentals={activeRentals}
-          fleetSize={fleet}
+          totalTotes={totalTotes}
         />
       )}
     </div>

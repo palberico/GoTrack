@@ -7,7 +7,7 @@ import {
   customersCol,
   rentalsCol,
   settingsDoc,
-  updateFleetSize,
+  updateTotalTotes,
   onSnapshot,
   query,
   where,
@@ -41,7 +41,7 @@ function ForecastTooltip({ active, payload, label }) {
       <p className="font-semibold text-gray-700 mb-1">{label}</p>
       <p className="text-green-600">{available} available</p>
       <p className="text-gray-500">{rented} rented</p>
-      <p className="text-gray-400">Fleet: {total}</p>
+      <p className="text-gray-400">Total: {total}</p>
     </div>
   )
 }
@@ -145,18 +145,18 @@ function ScheduleList({ rentals, type }) {
 
 // ── main page ─────────────────────────────────────────────────
 export default function Dashboard() {
-  const [fleet, setFleet]       = useState(null)
-  const [rentals, setRentals]   = useState([])
-  const [editFleet, setEditFleet] = useState(false)
-  const [fleetInput, setFleetInput] = useState('')
-  const [saving, setSaving]     = useState(false)
+  const [totalTotes, setTotalTotes]           = useState(null)
+  const [rentals, setRentals]                 = useState([])
+  const [editTotalTotes, setEditTotalTotes]   = useState(false)
+  const [totalTotesInput, setTotalTotesInput] = useState('')
+  const [saving, setSaving]                   = useState(false)
 
   // live listener: settings
   useEffect(() => {
     const unsub = onSnapshot(settingsDoc, (snap) => {
       const size = snap.exists() ? (snap.data().totalTotes ?? 20) : 20
-      setFleet(size)
-      setFleetInput(String(size))
+      setTotalTotes(size)
+      setTotalTotesInput(String(size))
     })
     return unsub
   }, [])
@@ -179,7 +179,7 @@ export default function Dashboard() {
     return start && notYetReturned ? sum + (r.toteCount || 0) : sum
   }, 0)
 
-  const availableToday = Math.max(0, (fleet ?? 0) - currentlyRented)
+  const availableToday = Math.max(0, (totalTotes ?? 0) - currentlyRented)
 
   const dueToday = rentals.filter(r => r.returnDate === todayStr)
     .reduce((sum, r) => sum + (r.toteCount || 0), 0)
@@ -199,18 +199,18 @@ export default function Dashboard() {
       return sum
     }, 0)
 
-    const available = Math.max(0, (fleet ?? 0) - rented)
-    return { label, available, rented, total: fleet ?? 0 }
+    const available = Math.max(0, (totalTotes ?? 0) - rented)
+    return { label, available, rented, total: totalTotes ?? 0 }
   })
 
-  // ── fleet size edit ───────────────────────────────────────
-  async function handleFleetSave() {
-    const n = parseInt(fleetInput, 10)
+  // ── total totes edit ──────────────────────────────────────
+  async function handleTotalTotesSave() {
+    const n = parseInt(totalTotesInput, 10)
     if (isNaN(n) || n < 1) return
     setSaving(true)
-    await updateFleetSize(n)
+    await updateTotalTotes(n)
     setSaving(false)
-    setEditFleet(false)
+    setEditTotalTotes(false)
   }
 
   return (
@@ -224,33 +224,33 @@ export default function Dashboard() {
           </p>
         </div>
 
-        {/* Fleet size editor */}
+        {/* Total totes editor */}
         <div className="flex items-center gap-2">
-          {editFleet ? (
+          {editTotalTotes ? (
             <>
               <input
                 type="number"
                 min={1}
                 className="input w-24 text-center"
-                value={fleetInput}
-                onChange={e => setFleetInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleFleetSave()}
+                value={totalTotesInput}
+                onChange={e => setTotalTotesInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleTotalTotesSave()}
                 autoFocus
               />
-              <button className="btn-primary" onClick={handleFleetSave} disabled={saving}>
+              <button className="btn-primary" onClick={handleTotalTotesSave} disabled={saving}>
                 {saving ? 'Saving…' : 'Save'}
               </button>
-              <button className="btn-secondary" onClick={() => setEditFleet(false)}>Cancel</button>
+              <button className="btn-secondary" onClick={() => setEditTotalTotes(false)}>Cancel</button>
             </>
           ) : (
             <button
               className="btn-secondary flex items-center gap-2"
-              onClick={() => setEditFleet(true)}
+              onClick={() => setEditTotalTotes(true)}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
               </svg>
-              Edit fleet size
+              Edit total totes
             </button>
           )}
         </div>
@@ -258,7 +258,7 @@ export default function Dashboard() {
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard label="Total fleet"        value={fleet}            accent="default" sub="totes owned" />
+        <StatCard label="Total totes"         value={totalTotes}       accent="default" sub="totes owned" />
         <StatCard label="Currently rented"   value={currentlyRented}  accent="amber"   sub="out today" />
         <StatCard label="Available today"    value={availableToday}   accent="green"   sub="ready to rent" />
         <StatCard label="Due back today"     value={dueToday}         accent="red"     sub="totes returning" />
@@ -282,7 +282,7 @@ export default function Dashboard() {
               tick={{ fontSize: 11, fill: '#9ca3af' }}
               axisLine={false}
               tickLine={false}
-              domain={[0, (fleet ?? 20) + 2]}
+              domain={[0, (totalTotes ?? 20) + 2]}
             />
             <Tooltip content={<ForecastTooltip />} cursor={{ fill: '#f1f5f9' }} />
             <Bar dataKey="available" radius={[4, 4, 0, 0]} maxBarSize={40}>
