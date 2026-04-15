@@ -5,6 +5,7 @@ import {
   doc,
   addDoc,
   updateDoc,
+  deleteDoc,
   onSnapshot,
   query,
   where,
@@ -60,6 +61,10 @@ export async function updateCustomer(id, data) {
   return updateDoc(doc(db, 'customers', id), data)
 }
 
+export async function deleteCustomer(id) {
+  return deleteDoc(doc(db, 'customers', id))
+}
+
 // ── Rental helpers ────────────────────────────────────────────
 export async function addRental(data) {
   return addDoc(rentalsCol, {
@@ -69,9 +74,24 @@ export async function addRental(data) {
   })
 }
 
+export async function updateRental(id, data) {
+  return updateDoc(doc(db, 'rentals', id), data)
+}
+
+export async function deleteRental(id) {
+  return deleteDoc(doc(db, 'rentals', id))
+}
+
+export async function cancelRental(id) {
+  return updateDoc(doc(db, 'rentals', id), {
+    status: 'cancelled',
+    cancelledAt: serverTimestamp(),
+  })
+}
+
 export async function confirmRental(rentalId, { signatureDataUrl, signerName, signedDate }) {
   return updateDoc(doc(db, 'rentals', rentalId), {
-    status: 'active',
+    status: 'delivered',
     signatureDataUrl,
     signerName,
     signedDate,
@@ -84,6 +104,20 @@ export async function markReturned(rentalId) {
     status: 'returned',
     returnedAt: serverTimestamp(),
   })
+}
+
+// processReturn: marks returned, stores return record, deducts permanently-lost totes from fleet
+export async function processReturn(rentalId, returnRecord, toteDeduction) {
+  await updateDoc(doc(db, 'rentals', rentalId), {
+    status: 'returned',
+    returnedAt: serverTimestamp(),
+    returnRecord,
+  })
+  if (toteDeduction > 0) {
+    const snap    = await getDoc(settingsDoc)
+    const current = snap.exists() ? (snap.data().totalTotes ?? 20) : 20
+    await setDoc(settingsDoc, { totalTotes: Math.max(0, current - toteDeduction) }, { merge: true })
+  }
 }
 
 // ── Auth ──────────────────────────────────────────────────────

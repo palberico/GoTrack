@@ -32,6 +32,18 @@ function availabilityColor(available, total) {
   return '#ef4444'
 }
 
+function formatDate(str) {
+  if (!str) return '—'
+  const [y, m, d] = str.split('-')
+  return `${m}/${d}/${y}`
+}
+
+function daysUntil(dateStr) {
+  const today  = new Date(); today.setHours(0, 0, 0, 0)
+  const target = new Date(dateStr + 'T00:00:00'); target.setHours(0, 0, 0, 0)
+  return Math.round((target - today) / 86400000)
+}
+
 // ── custom tooltip ────────────────────────────────────────────
 function ForecastTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
@@ -143,10 +155,100 @@ function ScheduleList({ rentals, type }) {
   )
 }
 
+// ── delivered list ────────────────────────────────────────────
+function DeliveredList({ rentals }) {
+  const todayStr = toDateStr(new Date())
+  const sorted   = [...rentals].sort((a, b) => (a.returnDate ?? '').localeCompare(b.returnDate ?? ''))
+
+  if (sorted.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-10 text-center gap-2">
+        <svg className="w-8 h-8 text-gray-200" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+        </svg>
+        <p className="text-sm text-gray-400">No delivered totes</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      {sorted.map(r => {
+        const days      = daysUntil(r.returnDate)
+        const isOverdue = r.returnDate < todayStr
+        const isDueToday = r.returnDate === todayStr
+        return (
+          <div key={r.id} className={`flex items-start gap-3 px-4 py-3 rounded-lg ${isOverdue ? 'bg-red-50/60' : isDueToday ? 'bg-amber-50/60' : ''}`}>
+            <span className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${isOverdue ? 'bg-red-400' : isDueToday ? 'bg-amber-400' : 'bg-green-400'}`} />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-medium text-gray-900">{r.customerName || 'Unknown'}</span>
+                <span className="text-xs text-gray-400">{r.toteCount} tote{r.toteCount !== 1 ? 's' : ''}</span>
+              </div>
+              <p className="text-xs text-gray-400 mt-0.5">Return by {formatDate(r.returnDate)}</p>
+            </div>
+            <span className={`text-xs font-semibold whitespace-nowrap ${
+              isOverdue  ? 'text-red-600'   :
+              isDueToday ? 'text-amber-600' :
+              'text-gray-400'
+            }`}>
+              {isOverdue ? `${Math.abs(days)}d overdue` : isDueToday ? 'Due today' : `${days}d left`}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── returned list ─────────────────────────────────────────────
+function ReturnedList({ rentals }) {
+  const sorted = [...rentals].sort((a, b) => {
+    const aT = a.returnedAt?.toDate?.()?.getTime() ?? 0
+    const bT = b.returnedAt?.toDate?.()?.getTime() ?? 0
+    return bT - aT
+  })
+
+  if (sorted.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-10 text-center gap-2">
+        <svg className="w-8 h-8 text-gray-200" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+        </svg>
+        <p className="text-sm text-gray-400">No returns yet</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      {sorted.map(r => {
+        const returnedDate = r.returnedAt?.toDate
+          ? r.returnedAt.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          : formatDate(r.returnDate)
+        return (
+          <div key={r.id} className="flex items-start gap-3 px-4 py-3 rounded-lg">
+            <span className="w-2 h-2 rounded-full mt-1.5 shrink-0 bg-gray-300" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-medium text-gray-900">{r.customerName || 'Unknown'}</span>
+                <span className="text-xs text-gray-400">{r.toteCount} tote{r.toteCount !== 1 ? 's' : ''}</span>
+              </div>
+              <p className="text-xs text-gray-400 mt-0.5">Returned {returnedDate}</p>
+            </div>
+            <span className="text-xs font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full whitespace-nowrap">Returned</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── main page ─────────────────────────────────────────────────
 export default function Dashboard() {
   const [totalTotes, setTotalTotes]           = useState(null)
   const [rentals, setRentals]                 = useState([])
+  const [returnedRentals, setReturnedRentals] = useState([])
   const [editTotalTotes, setEditTotalTotes]   = useState(false)
   const [totalTotesInput, setTotalTotesInput] = useState('')
   const [saving, setSaving]                   = useState(false)
@@ -161,11 +263,20 @@ export default function Dashboard() {
     return unsub
   }, [])
 
-  // live listener: pending + active rentals (both count against availability)
+  // live listener: pending + active + delivered (all count against availability)
   useEffect(() => {
-    const q = query(rentalsCol, where('status', 'in', ['pending', 'active']))
+    const q = query(rentalsCol, where('status', 'in', ['pending', 'active', 'delivered']))
     const unsub = onSnapshot(q, (snap) => {
       setRentals(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    })
+    return unsub
+  }, [])
+
+  // live listener: returned rentals (for Returned card)
+  useEffect(() => {
+    const q = query(rentalsCol, where('status', '==', 'returned'))
+    const unsub = onSnapshot(q, (snap) => {
+      setReturnedRentals(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     })
     return unsub
   }, [])
@@ -183,6 +294,10 @@ export default function Dashboard() {
 
   const dueToday = rentals.filter(r => r.returnDate === todayStr)
     .reduce((sum, r) => sum + (r.toteCount || 0), 0)
+
+  // ── per-card rental subsets ───────────────────────────────
+  const pendingRentals   = rentals.filter(r => r.status === 'pending')
+  const deliveredRentals = rentals.filter(r => r.status === 'delivered' || r.status === 'active')
 
   // ── 14-day forecast data ──────────────────────────────────
   const forecastData = Array.from({ length: 14 }).map((_, i) => {
@@ -310,10 +425,10 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Drop-off + Pick-up schedules side by side */}
+      {/* 2×2 status grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-        {/* Drop-off */}
+        {/* Drop-off Schedule — pending rentals only */}
         <div className="card p-6 flex flex-col">
           <div className="flex items-center gap-2 mb-1">
             <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -322,11 +437,23 @@ export default function Dashboard() {
             </svg>
             <h2 className="text-base font-semibold text-gray-900">Drop-off Schedule</h2>
           </div>
-          <p className="text-xs text-gray-400 mb-4">All scheduled tote deliveries</p>
-          <ScheduleList rentals={rentals} type="dropoff" />
+          <p className="text-xs text-gray-400 mb-4">Totes scheduled to be dropped off</p>
+          <ScheduleList rentals={pendingRentals} type="dropoff" />
         </div>
 
-        {/* Pick-up */}
+        {/* Delivered — contract signed, totes with customer */}
+        <div className="card p-6 flex flex-col">
+          <div className="flex items-center gap-2 mb-1">
+            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+            <h2 className="text-base font-semibold text-gray-900">Delivered</h2>
+          </div>
+          <p className="text-xs text-gray-400 mb-4">Contract signed — totes currently with customers</p>
+          <DeliveredList rentals={deliveredRentals} />
+        </div>
+
+        {/* Pick-up Schedule — delivered rentals only */}
         <div className="card p-6 flex flex-col">
           <div className="flex items-center gap-2 mb-1">
             <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -334,8 +461,20 @@ export default function Dashboard() {
             </svg>
             <h2 className="text-base font-semibold text-gray-900">Pick-up Schedule</h2>
           </div>
-          <p className="text-xs text-gray-400 mb-4">All scheduled tote collections</p>
-          <ScheduleList rentals={rentals} type="pickup" />
+          <p className="text-xs text-gray-400 mb-4">Totes scheduled to be collected</p>
+          <ScheduleList rentals={deliveredRentals} type="pickup" />
+        </div>
+
+        {/* Returned — totes back in inventory */}
+        <div className="card p-6 flex flex-col">
+          <div className="flex items-center gap-2 mb-1">
+            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16 15v-1a4 4 0 00-4-4H8m0 0l3 3m-3-3l3-3m9 14V5a2 2 0 00-2-2H6a2 2 0 00-2 2v16l4-2 2 1 2-1 2 1 2-1 4 2z" />
+            </svg>
+            <h2 className="text-base font-semibold text-gray-900">Returned</h2>
+          </div>
+          <p className="text-xs text-gray-400 mb-4">Totes back in inventory</p>
+          <ReturnedList rentals={returnedRentals} />
         </div>
 
       </div>

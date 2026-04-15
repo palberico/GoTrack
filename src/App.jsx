@@ -10,6 +10,7 @@ import Customers from './pages/Customers'
 import CustomerDetail from './pages/CustomerDetail'
 import Rentals from './pages/Rentals'
 import RentalContract from './pages/RentalContract'
+import ReturnForm from './pages/ReturnForm'
 
 function AppLayout() {
   return (
@@ -23,7 +24,8 @@ function AppLayout() {
           <Route path="/customers"     element={<Customers />} />
           <Route path="/customers/:id" element={<CustomerDetail />} />
           <Route path="/rentals"       element={<Rentals />} />
-          <Route path="/rentals/:id"   element={<RentalContract />} />
+          <Route path="/rentals/:id/return" element={<ReturnForm />} />
+          <Route path="/rentals/:id"       element={<RentalContract />} />
           <Route path="*"              element={<Navigate to="/" replace />} />
         </Routes>
       </main>

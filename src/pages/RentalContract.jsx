@@ -167,12 +167,12 @@ function buildPDF(rental, customer, signatureDataUrl, signerName, signedDate) {
   doc.setTextColor(30, 30, 30)
   doc.setFontSize(16)
   doc.setFont('helvetica', 'bold')
-  doc.text('Go Track', L + 15, y + 8)
+  doc.text('Go Green Totes', L + 15, y + 8)
 
   doc.setFontSize(9)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(120, 120, 120)
-  doc.text('Tote Bag Rental Agreement', R, y + 8, { align: 'right' })
+  doc.text('Rental Agreement', R, y + 8, { align: 'right' })
 
   y += 18
   rule([34, 197, 94])
@@ -182,6 +182,7 @@ function buildPDF(rental, customer, signatureDataUrl, signerName, signedDate) {
   gap(3)
   body(`Rental ID: #${rental.id.slice(-6).toUpperCase()}`)
   body(`Agreement Date: ${signedDate}`)
+  body(`Delivered Date: ${signedDate}`)
   gap(3)
 
   doc.setFontSize(9)
@@ -215,14 +216,12 @@ function buildPDF(rental, customer, signatureDataUrl, signerName, signedDate) {
   y += rowH + 2
 
   if (rental.dropoff?.address) {
-    labelVal('Drop-off Address', rental.dropoff.address,  L,    y)
-    if (rental.dropoff.window) labelVal('Drop-off Window', rental.dropoff.window, col2, y)
+    labelVal('Drop-off Address', rental.dropoff.address, L, y)
     y += rowH + 2
   }
 
   if (rental.pickup?.address) {
-    labelVal('Pick-up Address', rental.pickup.address,  L,    y)
-    if (rental.pickup.window) labelVal('Pick-up Window', rental.pickup.window, col2, y)
+    labelVal('Pick-up Address', rental.pickup.address, L, y)
     y += rowH + 2
   }
 
@@ -388,7 +387,7 @@ export default function RentalContract() {
   }
 
   // ── Already confirmed ────────────────────────────────────────
-  if (sent || rental.status === 'active') {
+  if (sent || rental.status === 'delivered') {
     return (
       <div className="p-6 md:p-8 max-w-xl mx-auto">
         <div className="card p-8 flex flex-col items-center gap-4 text-center">

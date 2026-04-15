@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { customersCol, addCustomer, onSnapshot } from '../firebase'
+import { customersCol, addCustomer, updateCustomer, deleteCustomer, onSnapshot } from '../firebase'
 
 function initials(name = '') {
   return name
@@ -11,14 +11,21 @@ function initials(name = '') {
     .join('')
 }
 
-function AddCustomerModal({ onClose }) {
+// ── Add / Edit modal ──────────────────────────────────────────
+function CustomerModal({ onClose, customer }) {
+  const isEdit = !!customer
   const [form, setForm] = useState({
-    name: '', phone: '', email: '',
-    street: '', city: '', state: '', zip: '',
-    notes: '',
+    name:   customer?.name   ?? '',
+    phone:  customer?.phone  ?? '',
+    email:  customer?.email  ?? '',
+    street: customer?.address?.street ?? '',
+    city:   customer?.address?.city   ?? '',
+    state:  customer?.address?.state  ?? '',
+    zip:    customer?.address?.zip    ?? '',
+    notes:  customer?.notes  ?? '',
   })
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError]   = useState('')
 
   function set(field) {
     return e => setForm(f => ({ ...f, [field]: e.target.value }))
@@ -29,7 +36,7 @@ function AddCustomerModal({ onClose }) {
     if (!form.name.trim()) { setError('Name is required.'); return }
     setSaving(true)
     try {
-      await addCustomer({
+      const data = {
         name:   form.name.trim(),
         phone:  form.phone.trim(),
         email:  form.email.trim(),
@@ -40,7 +47,12 @@ function AddCustomerModal({ onClose }) {
           zip:    form.zip.trim(),
         },
         notes:  form.notes.trim(),
-      })
+      }
+      if (isEdit) {
+        await updateCustomer(customer.id, data)
+      } else {
+        await addCustomer(data)
+      }
       onClose()
     } catch (err) {
       setError('Failed to save. Check your Firebase config.')
@@ -52,7 +64,9 @@ function AddCustomerModal({ onClose }) {
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
       <div className="card w-full max-w-md flex flex-col max-h-[92vh]">
         <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100 shrink-0">
-          <h2 className="text-base font-semibold text-gray-900">New Customer</h2>
+          <h2 className="text-base font-semibold text-gray-900">
+            {isEdit ? 'Edit Customer' : 'New Customer'}
+          </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -112,7 +126,7 @@ function AddCustomerModal({ onClose }) {
 
           <div className="flex gap-2 pb-2 pt-1">
             <button type="submit" className="btn-primary flex-1" disabled={saving}>
-              {saving ? 'Saving…' : 'Add Customer'}
+              {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Add Customer'}
             </button>
             <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
           </div>
@@ -122,10 +136,46 @@ function AddCustomerModal({ onClose }) {
   )
 }
 
+// ── Delete confirmation modal ─────────────────────────────────
+function DeleteConfirmModal({ customer, onConfirm, onCancel, deleting }) {
+  return (
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+      <div className="card w-full max-w-sm p-6 flex flex-col gap-4">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center shrink-0">
+            <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">Delete customer?</h3>
+            <p className="text-sm text-gray-500 mt-1">
+              <span className="font-medium">{customer.name}</span> and all their data will be permanently removed. This cannot be undone.
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2 justify-end">
+          <button className="btn-secondary" onClick={onCancel} disabled={deleting}>Cancel</button>
+          <button
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+            onClick={onConfirm}
+            disabled={deleting}
+          >
+            {deleting ? 'Deleting…' : 'Delete'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Customers() {
-  const [customers, setCustomers] = useState([])
-  const [showModal, setShowModal] = useState(false)
-  const [search, setSearch] = useState('')
+  const [customers, setCustomers]       = useState([])
+  const [showModal, setShowModal]       = useState(false)
+  const [editCustomer, setEditCustomer] = useState(null)
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleting, setDeleting]         = useState(false)
+  const [search, setSearch]             = useState('')
 
   useEffect(() => {
     const unsub = onSnapshot(customersCol, (snap) => {
@@ -135,6 +185,14 @@ export default function Customers() {
     })
     return unsub
   }, [])
+
+  async function handleDelete() {
+    if (!deleteTarget) return
+    setDeleting(true)
+    await deleteCustomer(deleteTarget.id)
+    setDeleting(false)
+    setDeleteTarget(null)
+  }
 
   const filtered = customers.filter(c =>
     c.name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -191,33 +249,60 @@ export default function Customers() {
       ) : (
         <div className="card divide-y divide-gray-100">
           {filtered.map(c => (
-            <Link
-              key={c.id}
-              to={`/customers/${c.id}`}
-              className="flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors"
-            >
-              {/* Avatar */}
-              <div className="w-9 h-9 rounded-full bg-gray-900 flex items-center justify-center shrink-0">
-                <span className="text-xs font-semibold text-white">{initials(c.name)}</span>
-              </div>
+            <div key={c.id} className="flex items-center gap-3 px-5 py-4 hover:bg-gray-50 transition-colors group">
+              {/* Clickable area → detail */}
+              <Link to={`/customers/${c.id}`} className="flex items-center gap-4 flex-1 min-w-0">
+                <div className="w-9 h-9 rounded-full bg-gray-900 flex items-center justify-center shrink-0">
+                  <span className="text-xs font-semibold text-white">{initials(c.name)}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">{c.name}</p>
+                  <p className="text-xs text-gray-400 truncate">
+                    {[c.email, c.phone].filter(Boolean).join(' · ')}
+                  </p>
+                </div>
+              </Link>
 
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">{c.name}</p>
-                <p className="text-xs text-gray-400 truncate">
-                  {[c.email, c.phone].filter(Boolean).join(' · ')}
-                </p>
+              {/* Action buttons */}
+              <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  title="Edit customer"
+                  onClick={() => setEditCustomer(c)}
+                  className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                </button>
+                <button
+                  title="Delete customer"
+                  onClick={() => setDeleteTarget(c)}
+                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
               </div>
-
-              <svg className="w-4 h-4 text-gray-300 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
-            </Link>
+            </div>
           ))}
         </div>
       )}
 
-      {showModal && <AddCustomerModal onClose={() => setShowModal(false)} />}
+      {showModal && (
+        <CustomerModal onClose={() => setShowModal(false)} />
+      )}
+      {editCustomer && (
+        <CustomerModal customer={editCustomer} onClose={() => setEditCustomer(null)} />
+      )}
+      {deleteTarget && (
+        <DeleteConfirmModal
+          customer={deleteTarget}
+          onConfirm={handleDelete}
+          onCancel={() => setDeleteTarget(null)}
+          deleting={deleting}
+        />
+      )}
     </div>
   )
 }

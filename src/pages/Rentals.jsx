@@ -5,7 +5,9 @@ import {
   rentalsCol,
   settingsDoc,
   addRental,
-  markReturned,
+  updateRental,
+  deleteRental,
+  cancelRental,
   onSnapshot,
   query,
   where,
@@ -28,8 +30,9 @@ function daysUntil(dateStr) {
   return Math.round((target - today) / 86400000)
 }
 
-function totesRentedOn(activeRentals, dateStr) {
-  return activeRentals.reduce((sum, r) => {
+function totesRentedOn(rentals, dateStr, excludeId) {
+  return rentals.reduce((sum, r) => {
+    if (r.id === excludeId) return sum
     if (r.startDate <= dateStr && r.returnDate >= dateStr) {
       return sum + (r.toteCount || 0)
     }
@@ -64,21 +67,23 @@ function SectionHeader({ icon, label }) {
   )
 }
 
-// ── Add rental modal ──────────────────────────────────────────
-function AddRentalModal({ onClose, customers, activeRentals, totalTotes }) {
-  const today = toDateStr(new Date())
-  const [form, setForm] = useState({
-    customerId:     '',
-    toteCount:      '',
-    startDate:      today,
-    returnDate:     '',
-    dropoffAddress: '',
-    dropoffDate:    today,
-    dropoffWindow:  '',
-    pickupAddress:  '',
-    pickupDate:     '',
-    pickupWindow:   '',
-  })
+// ── Add / Edit rental modal ───────────────────────────────────
+function RentalModal({ onClose, customers, activeRentals, totalTotes, editRental }) {
+  const isEdit = !!editRental
+  const today  = toDateStr(new Date())
+
+  const [form, setForm] = useState(() => ({
+    customerId:     editRental?.customerId     ?? '',
+    toteCount:      editRental?.toteCount      ? String(editRental.toteCount) : '',
+    startDate:      editRental?.startDate      ?? today,
+    returnDate:     editRental?.returnDate     ?? '',
+    dropoffAddress: editRental?.dropoff?.address ?? '',
+    dropoffDate:    editRental?.dropoff?.date    ?? today,
+    dropoffWindow:  editRental?.dropoff?.window  ?? '',
+    pickupAddress:  editRental?.pickup?.address  ?? '',
+    pickupDate:     editRental?.pickup?.date     ?? '',
+    pickupWindow:   editRental?.pickup?.window   ?? '',
+  }))
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState('')
 
@@ -87,10 +92,8 @@ function AddRentalModal({ onClose, customers, activeRentals, totalTotes }) {
       const value = e.target.value
       setForm(f => {
         const next = { ...f, [field]: value }
-        // Keep dropoff/pickup dates in sync with rental dates by default
         if (field === 'startDate'  && f.dropoffDate === f.startDate)  next.dropoffDate = value
         if (field === 'returnDate' && f.pickupDate  === f.returnDate) next.pickupDate  = value
-        // Auto-fill drop-off address from the selected customer's address
         if (field === 'customerId') {
           const customer = customers.find(c => c.id === value)
           const addr = customer?.address
@@ -109,7 +112,7 @@ function AddRentalModal({ onClose, customers, activeRentals, totalTotes }) {
     if (!form.startDate || !form.returnDate) return null
     let maxUsed = 0
     for (let d = new Date(form.startDate); toDateStr(d) <= form.returnDate; d.setDate(d.getDate() + 1)) {
-      const used = totesRentedOn(activeRentals, toDateStr(d))
+      const used = totesRentedOn(activeRentals, toDateStr(d), editRental?.id)
       if (used > maxUsed) maxUsed = used
     }
     const requested = parseInt(form.toteCount, 10) || 0
@@ -119,12 +122,11 @@ function AddRentalModal({ onClose, customers, activeRentals, totalTotes }) {
 
   async function handleSubmit(e) {
     e.preventDefault()
-
-    if (!form.customerId)                          { setError('Please select a customer.'); return }
+    if (!form.customerId)                               { setError('Please select a customer.'); return }
     if (!form.toteCount || parseInt(form.toteCount) < 1) { setError('Enter at least 1 tote.'); return }
-    if (!form.startDate)                           { setError('Start date is required.'); return }
-    if (!form.returnDate)                          { setError('Return date is required.'); return }
-    if (form.returnDate < form.startDate)          { setError('Return date must be on or after start date.'); return }
+    if (!form.startDate)                                { setError('Start date is required.'); return }
+    if (!form.returnDate)                               { setError('Return date is required.'); return }
+    if (form.returnDate < form.startDate)               { setError('Return date must be on or after start date.'); return }
 
     const avail = availabilityForWindow()
     if (avail && avail.requested > avail.available) {
@@ -135,12 +137,12 @@ function AddRentalModal({ onClose, customers, activeRentals, totalTotes }) {
     setSaving(true)
     try {
       const customer = customers.find(c => c.id === form.customerId)
-      await addRental({
-        customerId:    form.customerId,
-        customerName:  customer?.name ?? '',
-        toteCount:     parseInt(form.toteCount, 10),
-        startDate:     form.startDate,
-        returnDate:    form.returnDate,
+      const data = {
+        customerId:   form.customerId,
+        customerName: customer?.name ?? '',
+        toteCount:    parseInt(form.toteCount, 10),
+        startDate:    form.startDate,
+        returnDate:   form.returnDate,
         dropoff: {
           address: form.dropoffAddress.trim(),
           date:    form.dropoffDate,
@@ -151,7 +153,12 @@ function AddRentalModal({ onClose, customers, activeRentals, totalTotes }) {
           date:    form.pickupDate,
           window:  form.pickupWindow,
         },
-      })
+      }
+      if (isEdit) {
+        await updateRental(editRental.id, data)
+      } else {
+        await addRental(data)
+      }
       onClose()
     } catch (err) {
       setError('Failed to save. Check your Firebase config.')
@@ -166,7 +173,9 @@ function AddRentalModal({ onClose, customers, activeRentals, totalTotes }) {
       <div className="card w-full max-w-lg flex flex-col max-h-[92vh]">
         {/* Fixed header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100 shrink-0">
-          <h2 className="text-base font-semibold text-gray-900">New Rental</h2>
+          <h2 className="text-base font-semibold text-gray-900">
+            {isEdit ? 'Edit Rental' : 'New Rental'}
+          </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -177,7 +186,6 @@ function AddRentalModal({ onClose, customers, activeRentals, totalTotes }) {
         {/* Scrollable body */}
         <form onSubmit={handleSubmit} className="overflow-y-auto px-6 py-4 flex flex-col gap-4">
 
-          {/* ── Rental details ── */}
           <SectionHeader icon={
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
@@ -197,13 +205,8 @@ function AddRentalModal({ onClose, customers, activeRentals, totalTotes }) {
           <div>
             <label className="label">Number of totes *</label>
             <input
-              type="number"
-              min={1}
-              max={totalTotes}
-              className="input"
-              placeholder="e.g. 5"
-              value={form.toteCount}
-              onChange={set('toteCount')}
+              type="number" min={1} max={totalTotes} className="input"
+              placeholder="e.g. 5" value={form.toteCount} onChange={set('toteCount')}
             />
           </div>
 
@@ -242,7 +245,6 @@ function AddRentalModal({ onClose, customers, activeRentals, totalTotes }) {
             </div>
           )}
 
-          {/* ── Drop-off ── */}
           <SectionHeader icon={
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
@@ -252,14 +254,8 @@ function AddRentalModal({ onClose, customers, activeRentals, totalTotes }) {
 
           <div>
             <label className="label">Drop-off address</label>
-            <input
-              className="input"
-              placeholder="123 Main St, Suburb"
-              value={form.dropoffAddress}
-              onChange={set('dropoffAddress')}
-            />
+            <input className="input" placeholder="123 Main St, Suburb" value={form.dropoffAddress} onChange={set('dropoffAddress')} />
           </div>
-
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Drop-off date</label>
@@ -274,7 +270,6 @@ function AddRentalModal({ onClose, customers, activeRentals, totalTotes }) {
             </div>
           </div>
 
-          {/* ── Pick-up ── */}
           <SectionHeader icon={
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
@@ -283,14 +278,8 @@ function AddRentalModal({ onClose, customers, activeRentals, totalTotes }) {
 
           <div>
             <label className="label">Pick-up address</label>
-            <input
-              className="input"
-              placeholder="123 Main St, Suburb"
-              value={form.pickupAddress}
-              onChange={set('pickupAddress')}
-            />
+            <input className="input" placeholder="123 Main St, Suburb" value={form.pickupAddress} onChange={set('pickupAddress')} />
           </div>
-
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Pick-up date</label>
@@ -309,11 +298,44 @@ function AddRentalModal({ onClose, customers, activeRentals, totalTotes }) {
 
           <div className="flex gap-2 pb-2 pt-1">
             <button type="submit" className="btn-primary flex-1" disabled={saving}>
-              {saving ? 'Saving…' : 'Create Rental'}
+              {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Rental'}
             </button>
             <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
           </div>
         </form>
+      </div>
+    </div>
+  )
+}
+
+// ── Confirm action modal (cancel / delete) ─────────────────────
+function ConfirmModal({ title, message, confirmLabel, danger, onConfirm, onCancel, loading }) {
+  return (
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+      <div className="card w-full max-w-sm p-6 flex flex-col gap-4">
+        <div className="flex items-start gap-3">
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${danger ? 'bg-red-100' : 'bg-amber-100'}`}>
+            <svg className={`w-5 h-5 ${danger ? 'text-red-600' : 'text-amber-600'}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
+            <p className="text-sm text-gray-500 mt-1">{message}</p>
+          </div>
+        </div>
+        <div className="flex gap-2 justify-end">
+          <button className="btn-secondary" onClick={onCancel} disabled={loading}>Cancel</button>
+          <button
+            className={`px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 ${
+              danger ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-500 hover:bg-amber-600'
+            }`}
+            onClick={onConfirm}
+            disabled={loading}
+          >
+            {loading ? 'Please wait…' : confirmLabel}
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -341,32 +363,37 @@ function LogisticsBadge({ icon, label, address, date, window: timeWindow }) {
 }
 
 // ── Rental row ────────────────────────────────────────────────
-function RentalRow({ rental, onMarkReturned, marking }) {
-  const navigate = useNavigate()
-  const today = toDateStr(new Date())
-  const isPending = rental.status === 'pending'
-  const isOverdue = rental.status === 'active' && rental.returnDate < today
-  const days = daysUntil(rental.returnDate)
+function RentalRow({ rental, onEdit, onCancel, onDelete }) {
+  const navigate   = useNavigate()
+  const today      = toDateStr(new Date())
+  const isPending  = rental.status === 'pending'
+  const isDelivered = rental.status === 'delivered' || rental.status === 'active'
+  const isCancelled = rental.status === 'cancelled'
+  const isReturned  = rental.status === 'returned'
+  const isOverdue   = isDelivered && rental.returnDate < today
+  const days        = daysUntil(rental.returnDate)
 
-  let dueBadge
+  let statusBadge
   if (isPending) {
-    dueBadge = (
+    statusBadge = (
       <span className="text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full whitespace-nowrap">
         Awaiting contract
       </span>
     )
-  } else if (rental.status === 'returned') {
-    dueBadge = <span className="text-xs font-medium text-gray-400">Returned</span>
+  } else if (isCancelled) {
+    statusBadge = <span className="text-xs font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Cancelled</span>
+  } else if (isReturned) {
+    statusBadge = <span className="text-xs font-medium text-gray-400">Returned</span>
   } else if (isOverdue) {
-    dueBadge = (
+    statusBadge = (
       <span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full whitespace-nowrap">
         {Math.abs(days)}d overdue
       </span>
     )
   } else if (days === 0) {
-    dueBadge = <span className="text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full whitespace-nowrap">Due today</span>
-  } else {
-    dueBadge = <span className="text-xs font-medium text-gray-500 whitespace-nowrap">{days}d left</span>
+    statusBadge = <span className="text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full whitespace-nowrap">Due today</span>
+  } else if (isDelivered) {
+    statusBadge = <span className="text-xs font-medium text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full whitespace-nowrap">Delivered · {days}d left</span>
   }
 
   const hasLogistics = rental.dropoff?.address || rental.dropoff?.window ||
@@ -378,7 +405,6 @@ function RentalRow({ rental, onMarkReturned, marking }) {
       <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
     </svg>
   )
-
   const pickupIcon = (
     <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
@@ -386,14 +412,17 @@ function RentalRow({ rental, onMarkReturned, marking }) {
   )
 
   function handleRowClick(e) {
-    // Don't navigate if clicking the customer name link or the mark returned button
     if (e.target.closest('a') || e.target.closest('button')) return
-    navigate(`/rentals/${rental.id}`)
+    if (isPending) navigate(`/rentals/${rental.id}`)
   }
 
   return (
     <div
-      className={`px-5 py-4 cursor-pointer hover:bg-gray-50 transition-colors ${isOverdue ? 'bg-red-50/50 hover:bg-red-50' : ''}`}
+      className={`px-5 py-4 transition-colors ${
+        isPending ? 'cursor-pointer hover:bg-gray-50' :
+        isOverdue ? 'bg-red-50/50' :
+        isCancelled ? 'bg-gray-50/50 opacity-60' : ''
+      }`}
       onClick={handleRowClick}
     >
       <div className="flex items-start gap-4">
@@ -409,30 +438,18 @@ function RentalRow({ rental, onMarkReturned, marking }) {
             {rental.toteCount} tote{rental.toteCount !== 1 ? 's' : ''} · {formatDate(rental.startDate)} → {formatDate(rental.returnDate)}
           </p>
 
-          {/* Logistics */}
           {hasLogistics && (
             <div className="mt-2 flex flex-col gap-1">
-              <LogisticsBadge
-                icon={dropoffIcon}
-                label="Drop-off"
-                address={rental.dropoff?.address}
-                date={rental.dropoff?.date}
-                window={rental.dropoff?.window}
-              />
-              <LogisticsBadge
-                icon={pickupIcon}
-                label="Pick-up"
-                address={rental.pickup?.address}
-                date={rental.pickup?.date}
-                window={rental.pickup?.window}
-              />
+              <LogisticsBadge icon={dropoffIcon} label="Drop-off" address={rental.dropoff?.address} date={rental.dropoff?.date} window={rental.dropoff?.window} />
+              <LogisticsBadge icon={pickupIcon}  label="Pick-up"  address={rental.pickup?.address}  date={rental.pickup?.date}  window={rental.pickup?.window} />
             </div>
           )}
         </div>
 
         {/* Actions */}
         <div className="flex flex-col items-end gap-2 shrink-0 mt-0.5">
-          {dueBadge}
+          {statusBadge}
+
           {isPending && (
             <span className="text-xs text-gray-400 flex items-center gap-1">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -441,15 +458,52 @@ function RentalRow({ rental, onMarkReturned, marking }) {
               View contract
             </span>
           )}
-          {rental.status === 'active' && (
+
+          {isDelivered && (
             <button
               className="btn-secondary text-xs py-1.5 px-3 whitespace-nowrap"
-              onClick={() => onMarkReturned(rental.id)}
-              disabled={marking === rental.id}
+              onClick={() => navigate(`/rentals/${rental.id}/return`)}
             >
-              {marking === rental.id ? '…' : 'Mark returned'}
+              Mark returned
             </button>
           )}
+
+          {/* Edit / Cancel / Delete */}
+          <div className="flex items-center gap-1 mt-0.5">
+            {!isReturned && !isCancelled && (
+              <button
+                title="Edit rental"
+                onClick={() => onEdit(rental)}
+                className="p-1 text-gray-300 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+              </button>
+            )}
+            {(isPending || isDelivered) && (
+              <button
+                title="Cancel rental"
+                onClick={() => onCancel(rental)}
+                className="p-1 text-gray-300 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+            {(isReturned || isCancelled) && (
+              <button
+                title="Delete rental"
+                onClick={() => onDelete(rental)}
+                className="p-1 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -458,13 +512,16 @@ function RentalRow({ rental, onMarkReturned, marking }) {
 
 // ── Main page ─────────────────────────────────────────────────
 export default function Rentals() {
-  const [customers, setCustomers]   = useState([])
-  const [activeRentals, setActive]  = useState([])
-  const [allRentals, setAll]        = useState([])
-  const [totalTotes, setTotalTotes] = useState(20)
-  const [showModal, setShowModal]   = useState(false)
-  const [marking, setMarking]       = useState(null)
-  const [tab, setTab]               = useState('active')
+  const [customers, setCustomers]     = useState([])
+  const [activeRentals, setActive]    = useState([])
+  const [allRentals, setAll]          = useState([])
+  const [totalTotes, setTotalTotes]   = useState(20)
+  const [showModal, setShowModal]     = useState(false)
+  const [editRental, setEditRental]   = useState(null)
+  const [cancelTarget, setCancelTarget] = useState(null)
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [actionLoading, setActionLoading] = useState(false)
+  const [tab, setTab]                 = useState('active')
 
   useEffect(() => {
     const unsub = onSnapshot(settingsDoc, snap => {
@@ -483,7 +540,8 @@ export default function Rentals() {
   }, [])
 
   useEffect(() => {
-    const q = query(rentalsCol, where('status', 'in', ['pending', 'active']))
+    // Include 'active' for backward compat with pre-contract rentals
+    const q = query(rentalsCol, where('status', 'in', ['pending', 'active', 'delivered']))
     const unsub = onSnapshot(q, snap => {
       const docs = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
@@ -503,15 +561,27 @@ export default function Rentals() {
     return unsub
   }, [])
 
-  async function handleMarkReturned(id) {
-    setMarking(id)
-    await markReturned(id)
-    setMarking(null)
+  async function handleCancel() {
+    if (!cancelTarget) return
+    setActionLoading(true)
+    await cancelRental(cancelTarget.id)
+    setActionLoading(false)
+    setCancelTarget(null)
   }
 
-  const today = toDateStr(new Date())
+  async function handleDelete() {
+    if (!deleteTarget) return
+    setActionLoading(true)
+    await deleteRental(deleteTarget.id)
+    setActionLoading(false)
+    setDeleteTarget(null)
+  }
+
+  const today        = toDateStr(new Date())
   const pendingCount = activeRentals.filter(r => r.status === 'pending').length
-  const overdueCount = activeRentals.filter(r => r.status === 'active' && r.returnDate < today).length
+  const overdueCount = activeRentals.filter(r =>
+    (r.status === 'delivered' || r.status === 'active') && r.returnDate < today
+  ).length
   const display = tab === 'active' ? activeRentals : allRentals
 
   return (
@@ -576,19 +646,45 @@ export default function Rentals() {
             <RentalRow
               key={rental.id}
               rental={rental}
-              onMarkReturned={handleMarkReturned}
-              marking={marking}
+              onEdit={setEditRental}
+              onCancel={setCancelTarget}
+              onDelete={setDeleteTarget}
             />
           ))}
         </div>
       )}
 
-      {showModal && (
-        <AddRentalModal
-          onClose={() => setShowModal(false)}
+      {(showModal || editRental) && (
+        <RentalModal
+          onClose={() => { setShowModal(false); setEditRental(null) }}
           customers={customers}
           activeRentals={activeRentals}
           totalTotes={totalTotes}
+          editRental={editRental}
+        />
+      )}
+
+      {cancelTarget && (
+        <ConfirmModal
+          title="Cancel rental?"
+          message={`Cancel the rental for ${cancelTarget.customerName || 'this customer'}? The totes will be freed up but the record will remain in history.`}
+          confirmLabel="Cancel rental"
+          danger={false}
+          onConfirm={handleCancel}
+          onCancel={() => setCancelTarget(null)}
+          loading={actionLoading}
+        />
+      )}
+
+      {deleteTarget && (
+        <ConfirmModal
+          title="Delete rental?"
+          message={`Permanently delete the rental for ${deleteTarget.customerName || 'this customer'}? This cannot be undone.`}
+          confirmLabel="Delete"
+          danger={true}
+          onConfirm={handleDelete}
+          onCancel={() => setDeleteTarget(null)}
+          loading={actionLoading}
         />
       )}
     </div>
