@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   customersCol,
   rentalsCol,
@@ -342,12 +342,20 @@ function LogisticsBadge({ icon, label, address, date, window: timeWindow }) {
 
 // ── Rental row ────────────────────────────────────────────────
 function RentalRow({ rental, onMarkReturned, marking }) {
+  const navigate = useNavigate()
   const today = toDateStr(new Date())
+  const isPending = rental.status === 'pending'
   const isOverdue = rental.status === 'active' && rental.returnDate < today
   const days = daysUntil(rental.returnDate)
 
   let dueBadge
-  if (rental.status === 'returned') {
+  if (isPending) {
+    dueBadge = (
+      <span className="text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full whitespace-nowrap">
+        Awaiting contract
+      </span>
+    )
+  } else if (rental.status === 'returned') {
     dueBadge = <span className="text-xs font-medium text-gray-400">Returned</span>
   } else if (isOverdue) {
     dueBadge = (
@@ -377,8 +385,17 @@ function RentalRow({ rental, onMarkReturned, marking }) {
     </svg>
   )
 
+  function handleRowClick(e) {
+    // Don't navigate if clicking the customer name link or the mark returned button
+    if (e.target.closest('a') || e.target.closest('button')) return
+    navigate(`/rentals/${rental.id}`)
+  }
+
   return (
-    <div className={`px-5 py-4 ${isOverdue ? 'bg-red-50/50' : ''}`}>
+    <div
+      className={`px-5 py-4 cursor-pointer hover:bg-gray-50 transition-colors ${isOverdue ? 'bg-red-50/50 hover:bg-red-50' : ''}`}
+      onClick={handleRowClick}
+    >
       <div className="flex items-start gap-4">
         {/* Main info */}
         <div className="flex-1 min-w-0">
@@ -416,6 +433,14 @@ function RentalRow({ rental, onMarkReturned, marking }) {
         {/* Actions */}
         <div className="flex flex-col items-end gap-2 shrink-0 mt-0.5">
           {dueBadge}
+          {isPending && (
+            <span className="text-xs text-gray-400 flex items-center gap-1">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+              View contract
+            </span>
+          )}
           {rental.status === 'active' && (
             <button
               className="btn-secondary text-xs py-1.5 px-3 whitespace-nowrap"
@@ -458,7 +483,7 @@ export default function Rentals() {
   }, [])
 
   useEffect(() => {
-    const q = query(rentalsCol, where('status', '==', 'active'))
+    const q = query(rentalsCol, where('status', 'in', ['pending', 'active']))
     const unsub = onSnapshot(q, snap => {
       const docs = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
@@ -485,7 +510,8 @@ export default function Rentals() {
   }
 
   const today = toDateStr(new Date())
-  const overdueCount = activeRentals.filter(r => r.returnDate < today).length
+  const pendingCount = activeRentals.filter(r => r.status === 'pending').length
+  const overdueCount = activeRentals.filter(r => r.status === 'active' && r.returnDate < today).length
   const display = tab === 'active' ? activeRentals : allRentals
 
   return (
@@ -495,6 +521,9 @@ export default function Rentals() {
           <h1 className="text-2xl font-bold text-gray-900">Rentals</h1>
           <p className="text-sm text-gray-400 mt-0.5">
             {activeRentals.length} active
+            {pendingCount > 0 && (
+              <span className="ml-2 text-amber-500 font-medium">{pendingCount} awaiting contract</span>
+            )}
             {overdueCount > 0 && (
               <span className="ml-2 text-red-500 font-medium">{overdueCount} overdue</span>
             )}

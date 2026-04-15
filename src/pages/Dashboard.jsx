@@ -161,9 +161,9 @@ export default function Dashboard() {
     return unsub
   }, [])
 
-  // live listener: active rentals
+  // live listener: pending + active rentals (both count against availability)
   useEffect(() => {
-    const q = query(rentalsCol, where('status', '==', 'active'))
+    const q = query(rentalsCol, where('status', 'in', ['pending', 'active']))
     const unsub = onSnapshot(q, (snap) => {
       setRentals(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     })

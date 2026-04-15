@@ -64,8 +64,18 @@ export async function updateCustomer(id, data) {
 export async function addRental(data) {
   return addDoc(rentalsCol, {
     ...data,
-    status: 'active',
+    status: 'pending',
     createdAt: serverTimestamp(),
+  })
+}
+
+export async function confirmRental(rentalId, { signatureDataUrl, signerName, signedDate }) {
+  return updateDoc(doc(db, 'rentals', rentalId), {
+    status: 'active',
+    signatureDataUrl,
+    signerName,
+    signedDate,
+    confirmedAt: serverTimestamp(),
   })
 }
 

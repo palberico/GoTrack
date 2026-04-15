@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard'
 import Customers from './pages/Customers'
 import CustomerDetail from './pages/CustomerDetail'
 import Rentals from './pages/Rentals'
+import RentalContract from './pages/RentalContract'
 
 function AppLayout() {
   return (
@@ -22,6 +23,7 @@ function AppLayout() {
           <Route path="/customers"     element={<Customers />} />
           <Route path="/customers/:id" element={<CustomerDetail />} />
           <Route path="/rentals"       element={<Rentals />} />
+          <Route path="/rentals/:id"   element={<RentalContract />} />
           <Route path="*"              element={<Navigate to="/" replace />} />
         </Routes>
       </main>
